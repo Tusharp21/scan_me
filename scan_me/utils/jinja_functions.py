@@ -233,7 +233,11 @@ def verify_qr(
 	fill_color: str = "black",
 	back_color: str = "white",
 ) -> str:
-	"""QR data-URI for the doc's Verified QR payload; "" when no Verified QR exists."""
+	"""QR data-URI for the doc's Verified QR payload; "" when no Verified QR exists
+	or the caller can't read the document."""
+	# whitelisted and the lookup below ignores permissions, so check them here
+	if not (doctype and name) or not frappe.has_permission(doctype, "read", name):
+		return ""
 	record = frappe.db.get_value(
 		"Verified QR",
 		{"ref_doctype": doctype, "ref_docname": name},

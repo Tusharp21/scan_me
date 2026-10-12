@@ -19,7 +19,8 @@ from .letterhead import (
 	_measure_html_height_mm,
 	extract_body_header_footer,
 )
-from .options import _parse_copy_labels, _parse_options
+from .limits import acquire_slot, restrict_requests
+from .options import _limit_options, _parse_copy_labels, _parse_options
 from .pades import _maybe_pades_sign
 from .qr import _inject_qr_if_needed
 from .signature import _apply_signature_stamp_to_pages, _fetch_signature_records
@@ -53,14 +54,26 @@ def _launch_chromium(pw):
 
 @frappe.whitelist(allow_guest=False)
 def generate_chrome_pdf(doctype, name, print_format=None, letter_head=None, options=None, preview_mode=0):
-	"""Generate a PDF via headless Chromium (Playwright); orchestrates feature modules."""
+	"""Generate a PDF via headless Chromium (Playwright); orchestrates feature modules.
+
+	A live preview and a download have separate per-user limits, so a download is
+	never stuck behind previews."""
+	kind = "preview" if frappe.utils.cint(preview_mode) else "download"
+	release = acquire_slot(kind)
+	try:
+		return _generate_chrome_pdf(doctype, name, print_format, letter_head, options, preview_mode)
+	finally:
+		release()
+
+
+def _generate_chrome_pdf(doctype, name, print_format=None, letter_head=None, options=None, preview_mode=0):
 	if not frappe.has_permission(doctype, "print", name):
 		frappe.throw(frappe._("No permission to print this document."), frappe.PermissionError)
 
-	# Gate on Scan Me allowlist so unapproved doctypes can't get QR/watermark/stamps.
-	from scan_me.utils.verification import assert_allowed_doctype
+	# Gate on Scan Me settings so doctypes without Advanced Print can't get QR/watermark/stamps.
+	from scan_me.utils.verification import assert_print_allowed, get_doctype_features, get_print_toggles
 
-	assert_allowed_doctype(doctype)
+	assert_print_allowed(doctype)
 
 	# Reject cross-doctype Print Formats: a format targeting doctype B
 	# resolving against A's doc could leak unintended fragments.
@@ -81,7 +94,7 @@ def generate_chrome_pdf(doctype, name, print_format=None, letter_head=None, opti
 				frappe.ValidationError,
 			)
 
-	opts = _parse_options(options)
+	opts = _limit_options(_parse_options(options), get_doctype_features(doctype), get_print_toggles())
 	copy_count = opts["copy_count"]
 	copy_labels = _parse_copy_labels(opts["copy_labels"], copy_count)
 	header_mode = opts["header_mode"]
@@ -107,7 +120,7 @@ def generate_chrome_pdf(doctype, name, print_format=None, letter_head=None, opti
 		no_letterhead=True,
 	)
 	body_html = re.sub(r'<div class="action-banner.*?">.*?</div>', "", body_html, flags=re.DOTALL)
-	body_html = embed_images(body_html)
+	body_html = embed_images(body_html, enforce_file_permission=True)
 
 	# Body-defined id="header-html"/"footer-html" override Letter Head templates;
 	# they live in body for HTML preview but become repeating PDF header/footer.
@@ -141,10 +154,12 @@ def generate_chrome_pdf(doctype, name, print_format=None, letter_head=None, opti
 		with sync_playwright() as pw:
 			browser = _launch_chromium(pw)
 			page = browser.new_page()
+			restrict_requests(page)
 
 			# Measure rendered header/footer height — Chrome won't auto-size,
 			# content exceeding the reserved margin gets clipped.
 			measure_page = browser.new_page()
+			restrict_requests(measure_page)
 			try:
 				sample_header = _build_header_template(header_content, copy_labels[0])
 				sample_footer = _build_footer_template(footer_content)

@@ -29,7 +29,14 @@ def _resolve_qr_data(opts, doctype, name):
 		)
 		if vqr and vqr.unique_id:
 			return build_qr_payload(vqr.unique_id, vqr.content_hash)
-		return frappe.utils.get_url_to_form(doctype, name)
+		# No silent fallback: a form URL looks like a Verified QR but proves nothing.
+		frappe.throw(
+			frappe._(
+				"This document is not signed yet, so it has no Verified QR. "
+				"Sign it first, or choose 'Document URL' as the QR data."
+			),
+			frappe.ValidationError,
+		)
 	return frappe.utils.get_url_to_form(doctype, name)
 
 
@@ -54,8 +61,9 @@ def _inject_qr_if_needed(body_html, opts, doctype, name):
 
 	from scan_me.utils.jinja_functions import qr as _qr
 
+	# Outside the try: a ValidationError here must reach the user, not the Error Log.
+	qr_data = _resolve_qr_data(opts, doctype, name)
 	try:
-		qr_data = _resolve_qr_data(opts, doctype, name)
 		qr_src = _qr(qr_data, clearity=6, border=2)
 	except Exception:
 		frappe.log_error("Chrome PDF: QR generation failed", frappe.get_traceback())

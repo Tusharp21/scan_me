@@ -55,3 +55,38 @@ def _parse_copy_labels(raw, count):
 	while len(labels) < count:
 		labels.append(f"COPY {len(labels) + 1}")
 	return labels[:count]
+
+
+def _limit_options(opts, features, toggles=None):
+	"""Drop options the doctype or the global Print settings don't allow. The print
+	page hides them too, but a hand-built URL must not be able to switch them on."""
+	if toggles:
+		if not toggles["show_qr"]:
+			opts["include_qr"] = 0
+		if not toggles["show_copies"]:
+			opts["copy_count"] = 1
+			opts["copy_labels"] = ""
+		if not toggles["show_header_footer"]:
+			opts["header_mode"] = DEFAULT_OPTIONS["header_mode"]
+			opts["footer_mode"] = DEFAULT_OPTIONS["footer_mode"]
+		if not toggles["show_signature"]:
+			opts["append_signature"] = 0
+			opts["apply_pades"] = 0
+		mode = toggles["watermark_mode"]
+		if mode == "Disabled":
+			opts["watermark_text"] = ""
+		elif mode == "Document Status" and opts["watermark_text"]:
+			opts["watermark_text"] = "__status__"
+	if not features["document_marks"]:
+		opts["include_qr"] = 0
+		opts["watermark_text"] = ""
+		opts["copy_count"] = 1
+		opts["copy_labels"] = ""
+		opts["append_signature"] = 0
+	# The on-page signature card is for the plain "Verified QR" mode; with a PDF
+	# signature the signature stays invisible.
+	if features["signing_mode"] != "Verified QR":
+		opts["append_signature"] = 0
+	if not features["pdf_signature"]:
+		opts["apply_pades"] = 0
+	return opts

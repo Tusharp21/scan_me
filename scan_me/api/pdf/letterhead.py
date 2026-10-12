@@ -17,6 +17,8 @@ def _get_letterhead_raw(letter_head_name):
 
 	if not frappe.db.exists("Letter Head", letter_head_name):
 		return "", "", 0, 0  # deleted/renamed → no-letterhead render
+	if frappe.db.get_value("Letter Head", letter_head_name, "disabled"):
+		return "", "", 0, 0  # disabled heads are not offered, so a request for one is ignored
 	lh = frappe.get_doc("Letter Head", letter_head_name)
 	header_content = embed_images(lh.get("content") or "")
 	footer_content = embed_images(lh.get("footer") or "")

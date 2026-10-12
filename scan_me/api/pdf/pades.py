@@ -9,13 +9,16 @@ from .signature import _fetch_signature_records
 
 
 def _maybe_pades_sign(pdf_bytes, opts, doctype, name):
-	"""PyHanko-sign when both apply_pades (dialog) and enable_pades_signing (admin) are on."""
+	"""PyHanko-sign when apply_pades (dialog), enable_pades_signing (admin) and the doctype's Signing Mode all allow it."""
 	if not opts.get("apply_pades"):
 		return pdf_bytes
 
-	from scan_me.utils.verification import get_signing_settings
+	from scan_me.utils.verification import get_doctype_features, get_signing_settings
 
 	if not get_signing_settings()["enable_pades_signing"]:
+		return pdf_bytes
+	# Per-document-type switch: Signing Mode must include the PDF signature.
+	if not get_doctype_features(doctype)["pdf_signature"]:
 		return pdf_bytes
 
 	try:

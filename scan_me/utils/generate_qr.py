@@ -5,7 +5,12 @@ import uuid
 
 import frappe
 
-from scan_me.utils.verification import assert_allowed_doctype, compute_stored_hash, get_signing_settings
+from scan_me.utils.verification import (
+	assert_allowed_doctype,
+	compute_stored_hash,
+	doctype_requires_signature,
+	get_signing_settings,
+)
 
 # Client-supplied signature: PNG/JPEG data URI, up to ~2 MB after base64.
 SIGNATURE_DATA_URI_RE = re.compile(r"^data:image/(png|jpeg|jpg);base64,[A-Za-z0-9+/=]+$")
@@ -48,6 +53,10 @@ def generate_verified_qr(doctype, docname, signature_data=None):
 
 	assert_allowed_doctype(doctype)
 
+	# A cancelled document is void; a new signature on it would be misleading.
+	if frappe.db.get_value(doctype, docname, "docstatus") == 2:
+		frappe.throw(frappe._("A cancelled document cannot be signed."), frappe.ValidationError)
+
 	signed_by = frappe.session.user
 	signed_on = frappe.utils.now()
 
@@ -83,6 +92,14 @@ def generate_verified_qr(doctype, docname, signature_data=None):
 	final_signature = _lookup_user_signature(signed_by)
 	if not final_signature and not signing["reject_client_signature_data"] and signature_data:
 		final_signature = _validate_client_signature(signature_data)
+
+	# "Require Signature Image" is enforced here too, not just in the sign dialog.
+	if not final_signature and doctype_requires_signature(doctype):
+		frappe.throw(
+			frappe._(
+				"A signature is required for '{0}'. Draw one, or add a signature to your User profile."
+			).format(doctype)
+		)
 
 	content_hash = (
 		compute_stored_hash(doctype, docname, signed_by) if signing["enable_content_hash"] else None
