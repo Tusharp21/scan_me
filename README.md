@@ -21,14 +21,14 @@ A Frappe app that turns any allowlisted document into a verifiable, signable PDF
 
 Open Scan Me Settings in the desk:
 
-1. Under Doctype, add the DocTypes you want to expose for QR signing. Tick `enable` for each; tick `signature_required` if users must draw a signature before generating the QR.
-2. Under Verification & Signing, configure:
+1. Under **Documents**, add a row for each document type. Set its **Signing Mode** (None / Verified QR / Verified QR + PDF signature / PDF signature only), tick **Advanced Print** to give it the Advanced Print page, and **Document Marks** for QR, watermark, copies and the signature card. Tick `signature_required` in the row if signers must draw a signature.
+2. Under **Signing**, configure:
    - Allow Multiple Signers — N-party signing.
-   - Embed Content Hash in QR — tamper detection on doc edits.
-   - Lock Verified QR After Insert — absolute lock, no override.
+   - Detect Tampering with Content Hash — tamper detection on doc edits.
+   - Lock Signature Records Permanently — absolute lock, no override.
    - Use Stored User Signature Only — reads from a User custom field named `user_signature` / `signature` / `signature_image`.
-   - Apply Cryptographic PDF Signature (PAdES) — run every generated PDF through PyHanko.
-3. Under Print Dialog Features, toggle which sections of the print dialog your users see.
+   - Apply Real Digital Signature to PDFs (PAdES) — run generated PDFs through PyHanko; certificate upload lives here too.
+3. Under **Print**, toggle the Advanced Print button, live preview, watermark mode and which sections of the print dialog your users see.
 
 ### PAdES configuration
 
