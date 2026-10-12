@@ -87,7 +87,11 @@ class ScanMeAdvancedPrint {
 			this.doctype = new_doctype;
 			this.docname = new_docname;
 			this.parse_route();
-			this.schedule_preview();
+			// What a document type gets (marks, signing) can differ, so rebuild.
+			if (this.active_controller) this.active_controller.abort();
+			this.fields_dict = {};
+			this.render_skeleton();
+			this.load_and_init();
 		} else {
 			// Re-apply breadcrumbs — Frappe resets them on every page show.
 			this.set_breadcrumbs();
@@ -95,7 +99,9 @@ class ScanMeAdvancedPrint {
 	}
 
 	setup_page_actions() {
-		this.page.set_primary_action(__("Download PDF"), () => this.download(), "download");
+		// No icon: Frappe hides the label of an icon button on narrow screens and
+		// "download" is not an icon in its set, which left an empty button on phones.
+		this.page.set_primary_action(__("Download PDF"), () => this.download());
 		// Print toolbar actions — grouped under the ⋮ menu for a cleaner main area.
 		this.page.add_menu_item(__("Print"), () => this.action_print());
 		this.page.add_menu_item(__("Open in Full Page"), () => this.action_full_page());
@@ -175,16 +181,71 @@ class ScanMeAdvancedPrint {
                             <span class="sm-ap-badge-text">${__("Updating…")}</span>
                         </div>
                         <iframe class="sm-ap-iframe" title="${__("PDF Preview")}"></iframe>
+                        <div class="sm-ap-nopreview" hidden>
+                            <div class="sm-ap-nopreview-title">${__(
+								"PDF preview is not available on this device"
+							)}</div>
+                            <p>${__(
+								"This browser cannot show a PDF inside the page. Set your options, then open the PDF."
+							)}</p>
+                            <div class="sm-ap-nopreview-actions">
+                                <button type="button" class="btn btn-primary btn-sm sm-ap-open-pdf">${__(
+									"Open PDF"
+								)}</button>
+                                <button type="button" class="btn btn-default btn-sm sm-ap-open-quick">${__(
+									"Quick preview (not signed)"
+								)}</button>
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
         `);
+		this.setup_preview_mode();
+	}
+
+	// Phones and tablets have no PDF viewer for an <iframe> (Android Chrome shows a
+	// blank frame, iOS Safari only the first page), so they get buttons instead.
+	inline_pdf_supported() {
+		const ua = navigator.userAgent || "";
+		const ipad_desktop_mode =
+			navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+		if (/Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua) || ipad_desktop_mode) {
+			return false;
+		}
+		if (typeof navigator.pdfViewerEnabled === "boolean") return navigator.pdfViewerEnabled;
+		return true;
+	}
+
+	setup_preview_mode(force_no_inline) {
+		this.no_inline =
+			force_no_inline === undefined ? !this.inline_pdf_supported() : !!force_no_inline;
+		const $wrap = this.$wrapper.find(".sm-ap-preview-wrap");
+		$wrap.find(".sm-ap-iframe").prop("hidden", this.no_inline);
+		$wrap.find(".sm-ap-nopreview").prop("hidden", !this.no_inline);
+		if (!this.no_inline) return;
+
+		this.hide_badge();
+		$wrap
+			.find(".sm-ap-open-pdf")
+			.off("click")
+			.on("click", () => this.download());
+		$wrap
+			.find(".sm-ap-open-quick")
+			.off("click")
+			.on("click", () => {
+				window.open(
+					this.build_pdf_url(this.collect_values(), { preview: true }),
+					"_blank"
+				);
+			});
 	}
 
 	async load_and_init() {
 		try {
 			const resp = await frappe.call({
 				method: "scan_me.scan_me.doctype.scan_me_settings.scan_me_settings.get_dialog_settings",
+				args: { doctype: this.doctype, docname: this.docname },
 			});
 			this.settings = resp.message || {};
 		} catch (e) {
@@ -339,12 +400,20 @@ class ScanMeAdvancedPrint {
 			default: "Top Right",
 			depends_on: "include_qr",
 		});
+		// A Verified QR Link needs a signed document; offering it otherwise would
+		// only produce an error at render time.
+		const signed = !!(this.settings && this.settings.document_signed);
 		this.make_field("qr_source", {
 			fieldtype: "Select",
 			fieldname: "qr_source",
 			label: __("QR Data"),
-			options: ["Verified QR Link", "Document URL", "Custom Text"],
-			default: "Verified QR Link",
+			options: signed
+				? ["Verified QR Link", "Document URL", "Custom Text"]
+				: ["Document URL", "Custom Text"],
+			default: signed ? "Verified QR Link" : "Document URL",
+			description: signed
+				? ""
+				: __("Verified QR Link is available once the document is signed."),
 			depends_on: "include_qr",
 		});
 		this.make_field("qr_custom_text", {
@@ -410,7 +479,7 @@ class ScanMeAdvancedPrint {
 
 	update_pades_hint() {
 		// Hint is meaningful only when (a) Apply Signature is on, (b) the
-		// configured signature_type involves PAdES, and (c) the admin master
+		// this document type's Signing Mode involves PAdES, and (c) the admin master
 		// switch enable_pades_signing is on — otherwise PAdES silently downgrades.
 		const values = this.collect_values();
 		const sig_type = (this.settings && this.settings.signature_type) || "Visual Block";
@@ -450,7 +519,7 @@ class ScanMeAdvancedPrint {
 
 	build_options(v) {
 		// Map the single "Apply Signature" checkbox to the underlying API flags
-		// based on the signature_type configured in Scan Me Settings.
+		// based on the document type's Signing Mode (resolved server-side).
 		const sig_type = (this.settings && this.settings.signature_type) || "Visual Block";
 		const apply = !!v.apply_signature;
 		const want_visual = apply && (sig_type === "Visual Block" || sig_type === "Both");
@@ -504,6 +573,7 @@ class ScanMeAdvancedPrint {
 	}
 
 	async render_preview() {
+		if (this.no_inline) return; // no viewer on this device: nothing to refresh
 		const $iframe = this.$wrapper.find(".sm-ap-iframe");
 		if (!$iframe.length) return;
 
@@ -518,6 +588,14 @@ class ScanMeAdvancedPrint {
 				signal: this.active_controller.signal,
 				credentials: "same-origin",
 			});
+			if (resp.status === 429) {
+				// Too many renders running for this user; the latest options are
+				// re-read when the retry fires, so nothing is lost.
+				this.show_badge(__("Busy, retrying…"), "info");
+				clearTimeout(this.retry_timer);
+				this.retry_timer = setTimeout(() => this.schedule_preview(), 4000);
+				return;
+			}
 			if (!resp.ok) {
 				const txt = await resp.text();
 				throw new Error(`HTTP ${resp.status}: ${txt.slice(0, 200)}`);
@@ -559,6 +637,10 @@ class ScanMeAdvancedPrint {
 	}
 
 	action_print() {
+		if (this.no_inline) {
+			this.download();
+			return;
+		}
 		const iframe = this.$wrapper.find(".sm-ap-iframe").get(0);
 		if (!iframe) return;
 		try {
@@ -720,6 +802,36 @@ const SM_AP_CSS = `
     padding: 40px;
     text-align: center;
     color: var(--text-muted, #6b7280);
+}
+
+.sm-ap-nopreview {
+    width: 100%;
+    max-width: 480px;
+    margin: 24px auto;
+    padding: 20px;
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--border-color, #e5e7eb);
+    border-radius: 8px;
+    text-align: center;
+}
+.sm-ap-nopreview[hidden] { display: none; }
+.sm-ap-nopreview-title {
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+.sm-ap-nopreview p {
+    color: var(--text-muted, #6b7280);
+    margin-bottom: 16px;
+}
+.sm-ap-nopreview-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+}
+.sm-ap-iframe[hidden] { display: none; }
+.sm-ap-preview-wrap:has(.sm-ap-nopreview:not([hidden])) {
+    min-height: 0;
 }
 
 @media (max-width: 900px) {

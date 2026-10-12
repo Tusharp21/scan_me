@@ -3,8 +3,6 @@
 frappe.after_ajax(() => {
 	frappe.call({
 		method: "scan_me.scan_me.doctype.scan_me_settings.scan_me_settings.get_allowed_doctypes",
-		freeze: true,
-		freeze_message: __("Loading Verified QR setup..."),
 		callback(r) {
 			const allowed_doctypes = r.message || [];
 
@@ -16,11 +14,9 @@ frappe.after_ajax(() => {
 				frappe.ui.form.on(dt, {
 					refresh(frm) {
 						if (!frm || frm.is_new() || !frm.doc) return;
-
-						if (!frm._has_qr_button && frm.doc.docstatus <= 2) {
-							add_generate_qr_button(frm);
-							frm._has_qr_button = true;
-						}
+						// Frappe clears custom buttons on every refresh (save, submit,
+						// reload), so the button has to be added again each time.
+						add_generate_qr_button(frm);
 					},
 				});
 			});
@@ -31,20 +27,22 @@ frappe.after_ajax(() => {
 function add_generate_qr_button(frm) {
 	if (!frm || !frm.doctype) return;
 
+	const label = __("Generate Verified QR");
+	const docname = frm.doc.name;
+
 	frappe.call({
 		method: "scan_me.scan_me.doctype.verified_qr.verified_qr.check_button_required",
-		args: { doctype: frm.doctype, docname: frm.doc.name },
+		args: { doctype: frm.doctype, docname: docname },
 		callback(r) {
 			if (!r.message) return;
 
-			const is_allowed = r.message;
-			if (!is_allowed) return;
+			// The form may have moved on (another document, or already has the button).
+			if (!frm.doc || frm.doc.name !== docname || frm.is_new()) return;
+			if (frm.custom_buttons && frm.custom_buttons[label]) return;
 
-			frm.add_custom_button(
-				__("Generate Verified QR"),
-				() => generate_verified_qr(frm),
-				__("Actions")
-			).addClass("btn-primary");
+			frm.add_custom_button(label, () => generate_verified_qr(frm), __("Actions")).addClass(
+				"btn-primary"
+			);
 		},
 	});
 }
@@ -73,16 +71,13 @@ function generate_verified_qr(frm) {
 					freeze: true,
 					freeze_message: __("Generating Verified QR..."),
 					callback(res) {
-						if (res.message?.existing) {
-							frappe.msgprint({
-								message: __(
-									res.message.message || "Verified QR Created Successfully."
-								),
-								title: __("Info"),
-								indicator: "green",
-							});
-							frm.reload_doc();
-						}
+						const msg = res.message || {};
+						frappe.msgprint({
+							message: __(msg.message || "Verified QR created successfully!"),
+							title: __("Verified QR"),
+							indicator: msg.existing ? "orange" : "green",
+						});
+						frm.reload_doc();
 					},
 				});
 			}
@@ -124,8 +119,6 @@ function signature_required(frm) {
 		size: "large",
 		primary_action_label: "Sign QR",
 		primary_action(values) {
-			console.log(values);
-
 			frappe.call({
 				method: "scan_me.utils.generate_qr.generate_verified_qr",
 				args: {
@@ -136,11 +129,11 @@ function signature_required(frm) {
 				freeze: true,
 				freeze_message: __("Generating Verified QR..."),
 				callback(res) {
-					let response = res.message;
+					const response = res.message || {};
 					frappe.msgprint({
-						message: __(response.message),
-						title: __("Info"),
-						indicator: "green",
+						message: __(response.message || "Verified QR created successfully!"),
+						title: __("Verified QR"),
+						indicator: response.existing ? "orange" : "green",
 					});
 					frm.reload_doc();
 					d.hide();
