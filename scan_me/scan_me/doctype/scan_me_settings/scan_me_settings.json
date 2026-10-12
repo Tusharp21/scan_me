@@ -11,13 +11,12 @@
   "tab_verification",
   "verification_section",
   "allow_multiple_signers",
-  "enable_content_hash",
-  "column_break_verification",
-  "lock_verified_qr",
   "reject_client_signature_data",
-  "watermark_mode",
+  "column_break_verification",
+  "enable_content_hash",
+  "lock_verified_qr",
+  "sec_qr_expiry",
   "default_qr_validity_days",
-  "tab_signing",
   "cert_status_section",
   "cert_status_html",
   "cert_actions_section",
@@ -26,32 +25,35 @@
   "regenerate_cert_btn",
   "signing_config_section",
   "enable_pades_signing",
-  "signature_type",
+  "column_break_pades",
   "signing_cert_display_name",
-  "tab_verify_page",
-  "verify_page_section",
-  "public_verify_detail",
   "tab_print_dialog",
   "print_dialog_section",
   "enable_advanced_print_button",
+  "show_live_preview",
+  "column_break_dialog",
+  "watermark_mode",
+  "sec_print_sections",
   "show_copies_section",
   "show_header_footer_section",
+  "column_break_print_sections",
   "show_qr_section",
-  "column_break_dialog",
   "show_signature_section",
-  "show_live_preview"
+  "tab_verify_page",
+  "verify_page_section",
+  "public_verify_detail",
+  "tab_signing"
  ],
  "fields": [
   {
    "fieldname": "tab_allowed",
    "fieldtype": "Tab Break",
-   "label": "Allowed Documents"
+   "label": "Documents"
   },
   {
    "fieldname": "allowed_documents_section",
    "fieldtype": "Section Break",
-   "label": "",
-   "description": "Choose which document types can be signed with a Verified QR. Only documents listed below with \"Allow Signing\" ticked can be signed."
+   "label": ""
   },
   {
    "fieldname": "ref_doctype_info",
@@ -62,53 +64,50 @@
   {
    "fieldname": "tab_verification",
    "fieldtype": "Tab Break",
-   "label": "Verification & Signing"
+   "label": "Signing"
   },
   {
    "fieldname": "verification_section",
    "fieldtype": "Section Break",
-   "label": "",
-   "description": "Controls how strictly signatures are validated. Each rule is opt-in and independent; combine them to match your organization's trust requirements. Locks, once enabled, apply to everyone including Administrator."
+   "label": "Signing Rules",
+   "description": "These rules apply to every document type."
   },
   {
    "fieldname": "allow_multiple_signers",
    "fieldtype": "Check",
    "label": "Allow Multiple Signers Per Document",
    "default": "0",
-   "description": "Turn on so the same document can be signed by more than one user. Each signer gets their own Verified QR. When off, a document can only be signed once."
-  },
-  {
-   "fieldname": "enable_content_hash",
-   "fieldtype": "Check",
-   "label": "Detect Tampering with Content Hash",
-   "default": "0",
-   "description": "Stores a SHA-256 fingerprint of the document at sign time. If the document is edited later, the signature is automatically flagged as invalid in the PDF and on the verify page. Strongly recommended for production use."
-  },
-  {
-   "fieldname": "column_break_verification",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "lock_verified_qr",
-   "fieldtype": "Check",
-   "label": "Lock Signature Records Permanently",
-   "default": "0",
-   "description": "Prevents anyone — including Administrator — from editing or deleting Verified QR records. Turn on to guarantee a tamper-proof audit trail. Leave on in production."
+   "description": "More than one person can sign the same document. Each signer gets their own QR."
   },
   {
    "fieldname": "reject_client_signature_data",
    "fieldtype": "Check",
    "label": "Use Stored User Signature Only",
    "default": "0",
-   "description": "When on, any signature image sent by the browser is rejected — the server uses only the signature stored on the signer's User profile. When off, the server still prefers the stored signature if one exists and only falls back to the client-supplied image when the User has no stored signature (this prevents a user from submitting someone else's signature image). Requires a Custom Field on the User doctype named one of: user_signature, signature, or signature_image. The handwritten image is consumed only by PAdES digital signing — the on-page stamp does not display it."
+   "description": "Use only the signature saved on the signer's User profile, never one drawn in the browser. Needs a custom field on User named user_signature."
   },
   {
-   "fieldname": "watermark_mode",
-   "fieldtype": "Select",
-   "label": "Watermark Mode",
-   "options": "Disabled\nDocument Status\nCustom Text",
-   "default": "Disabled",
-   "description": "Controls the watermark option shown under the Copies section of the Advanced Print page. Disabled: no watermark option. Document Status: single checkbox — the watermark text is auto-taken from the document's status field (or Draft/Cancelled for submittable docs). Custom Text: checkbox plus a free-text input where the user types the watermark."
+   "fieldname": "column_break_verification",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "enable_content_hash",
+   "fieldtype": "Check",
+   "label": "Detect Tampering with Content Hash",
+   "default": "0",
+   "description": "A signature becomes invalid if the document is changed after it was signed."
+  },
+  {
+   "fieldname": "lock_verified_qr",
+   "fieldtype": "Check",
+   "label": "Lock Signature Records Permanently",
+   "default": "0",
+   "description": "Nobody, not even Administrator, can change or delete signature records."
+  },
+  {
+   "fieldname": "sec_qr_expiry",
+   "fieldtype": "Section Break",
+   "label": "QR Expiry"
   },
   {
    "fieldname": "default_qr_validity_days",
@@ -116,17 +115,12 @@
    "label": "Verified QR Validity (Days)",
    "default": "0",
    "non_negative": 1,
-   "description": "How long a newly generated Verified QR stays valid, counted from the signing date. 0 (default) means the QR never expires. Applied at sign time only — changing this value does NOT retroactively expire existing QRs. The /verify_document page returns an 'expired' status for scans of an expired QR."
-  },
-  {
-   "fieldname": "tab_signing",
-   "fieldtype": "Tab Break",
-   "label": "Signing & Certificates"
+   "description": "How many days a new QR stays valid. Leave 0 for no expiry."
   },
   {
    "fieldname": "cert_status_section",
    "fieldtype": "Section Break",
-   "label": "Active Signing Certificate"
+   "label": "PDF Digital Signature · Active Certificate"
   },
   {
    "fieldname": "cert_status_html",
@@ -136,8 +130,7 @@
   {
    "fieldname": "cert_actions_section",
    "fieldtype": "Section Break",
-   "label": "Certificate Actions",
-   "description": "Upload a CA-issued production certificate for green ✓ globally, or regenerate the auto-generated self-signed certificate (yellow ⚠ for recipients who haven't trusted it)."
+   "label": "Certificate Actions"
   },
   {
    "fieldname": "upload_cert_btn",
@@ -156,112 +149,122 @@
   {
    "fieldname": "signing_config_section",
    "fieldtype": "Section Break",
-   "label": "PAdES Signing Configuration",
-   "description": "How PAdES signing behaves when users tick Apply Signature on the Advanced Print page. The certificate metadata below is used only when a fresh self-signed certificate is auto-generated; CA-issued certificates use whatever Subject is embedded in the uploaded PKCS#12."
+   "label": "PDF Signing"
   },
   {
    "fieldname": "enable_pades_signing",
    "fieldtype": "Check",
    "label": "Apply Real Digital Signature to PDFs (PAdES)",
    "default": "0",
-   "description": "Cryptographically signs every generated PDF so Adobe Acrobat Reader shows the signature panel. On first use, a self-signed certificate is auto-created — Adobe will show a yellow \"signer's identity is unknown\" banner until trusted. For the trusted green banner globally, upload a CA-issued document-signing certificate (Sectigo, GlobalSign, eMudhra, DigiCert) via the Upload Production Certificate action above."
+   "description": "Master switch for signing PDFs with your certificate. Each document type also needs a PDF signature mode."
   },
   {
-   "fieldname": "signature_type",
-   "fieldtype": "Select",
-   "label": "Signature Type",
-   "options": "Visual Block\nCryptographic (PAdES)\nBoth",
-   "default": "Visual Block",
-   "description": "What is applied when a user ticks \"Apply Signature\" on the Advanced Print page. Visual Block: 'Signature valid' stamp rendered on every page of the PDF. Cryptographic (PAdES): invisible cryptographic signature surfaced in Adobe's signature panel (requires \"Apply Real Digital Signature\" above). Both: visual stamp plus PAdES."
+   "fieldname": "column_break_pades",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "signing_cert_display_name",
    "fieldtype": "Data",
    "label": "Self-Signed Certificate Display Name",
-   "description": "Organisation name baked into the auto-generated self-signed certificate (Subject CN/O). Leave blank to fall back to Global Defaults → Default Company, then to the site name. Used only when generating a new self-signed certificate via the Regenerate action above — ignored when a CA-issued certificate is installed."
-  },
-  {
-   "fieldname": "tab_verify_page",
-   "fieldtype": "Tab Break",
-   "label": "Public Verification"
-  },
-  {
-   "fieldname": "verify_page_section",
-   "fieldtype": "Section Break",
-   "label": "",
-   "description": "Controls the /verify_document/ page that anyone can use to check a document's authenticity. Choose how much detail is shown to guests."
-  },
-  {
-   "fieldname": "public_verify_detail",
-   "fieldtype": "Select",
-   "label": "Detail Level Shown to Guests",
-   "options": "Minimal\nStandard\nFull",
-   "default": "Standard",
-   "description": "Controls the maximum detail returned to callers who can already read the referenced document. Guests — and any logged-in user without read access to the target doc — always see only the status and signed-on date, regardless of this setting. Minimal: date only. Standard (recommended): document type, name, full timestamp, signer's name, and verification ID. Full: adds technical hashes on tampered results. The signer's email is never exposed by this endpoint."
+   "description": "Company name shown on the auto-created certificate. Leave empty to use your Default Company."
   },
   {
    "fieldname": "tab_print_dialog",
    "fieldtype": "Tab Break",
-   "label": "Print Dialog Features"
+   "label": "Print"
   },
   {
    "fieldname": "print_dialog_section",
    "fieldtype": "Section Break",
-   "label": "",
-   "description": "Controls the Scan Me print UI on document forms — the Advanced Print entry point and which sections appear inside that page."
+   "label": "Advanced Print"
   },
   {
    "fieldname": "enable_advanced_print_button",
    "fieldtype": "Check",
    "label": "Show Advanced Print Button on Forms",
-   "default": "1",
-   "description": "When on, a document icon appears next to the standard Print icon on every allowlisted form. Click it to open the Advanced Print page. Turn off if you only want users to use the standard Frappe print view."
+   "default": "1"
   },
   {
-   "fieldname": "show_copies_section",
+   "fieldname": "show_live_preview",
    "fieldtype": "Check",
-   "label": "Multiple Copies (Original / Duplicate / Triplicate)",
-   "default": "1",
-   "description": "Lets users generate multiple stamped copies of the same document in one PDF."
-  },
-  {
-   "fieldname": "show_header_footer_section",
-   "fieldtype": "Check",
-   "label": "Header & Footer Repeat Rules",
-   "default": "1",
-   "description": "Lets users choose whether the letterhead header and footer appear on all pages, only the first page, only the last page, etc."
-  },
-  {
-   "fieldname": "show_qr_section",
-   "fieldtype": "Check",
-   "label": "QR / Barcode Insertion",
-   "default": "1",
-   "description": "Lets users add a QR code to any corner of the PDF, pointing to the Verified QR, the document URL, or custom text."
+   "label": "Live PDF Preview",
+   "default": "1"
   },
   {
    "fieldname": "column_break_dialog",
    "fieldtype": "Column Break"
   },
   {
+   "fieldname": "watermark_mode",
+   "fieldtype": "Select",
+   "label": "Watermark Mode",
+   "options": "Disabled\nDocument Status\nCustom Text",
+   "default": "Disabled",
+   "description": "What the watermark says: nothing, the document status (Draft, Cancelled), or text the user types."
+  },
+  {
+   "fieldname": "sec_print_sections",
+   "fieldtype": "Section Break",
+   "label": "Sections in the Print Dialog"
+  },
+  {
+   "fieldname": "show_copies_section",
+   "fieldtype": "Check",
+   "label": "Multiple Copies (Original / Duplicate / Triplicate)",
+   "default": "1"
+  },
+  {
+   "fieldname": "show_header_footer_section",
+   "fieldtype": "Check",
+   "label": "Header & Footer Repeat Rules",
+   "default": "1"
+  },
+  {
+   "fieldname": "column_break_print_sections",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "show_qr_section",
+   "fieldtype": "Check",
+   "label": "QR / Barcode Insertion",
+   "default": "1"
+  },
+  {
    "fieldname": "show_signature_section",
    "fieldtype": "Check",
    "label": "Signature Block on PDF",
-   "default": "1",
-   "description": "Lets users add a 'Signature valid' stamp on every page and optionally apply a real cryptographic (PAdES) signature."
+   "default": "1"
   },
   {
-   "fieldname": "show_live_preview",
-   "fieldtype": "Check",
-   "label": "Live PDF Preview in the Dialog",
-   "default": "1",
-   "description": "When on, the dialog shows a preview pane that re-renders the PDF whenever a user changes an option. Turn off for a compact dialog — users only see the PDF after clicking Download."
+   "fieldname": "tab_verify_page",
+   "fieldtype": "Tab Break",
+   "label": "Public Verify"
+  },
+  {
+   "fieldname": "verify_page_section",
+   "fieldtype": "Section Break",
+   "label": "/verify_document"
+  },
+  {
+   "fieldname": "public_verify_detail",
+   "fieldtype": "Select",
+   "label": "Detail Level",
+   "options": "Minimal\nStandard\nFull",
+   "default": "Standard",
+   "description": "How much a logged-in user sees on the verify page. Guests always see only the signing date."
+  },
+  {
+   "fieldname": "tab_signing",
+   "fieldtype": "Tab Break",
+   "label": "Signing & Certificates",
+   "hidden": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-05-24 00:00:00.000000",
+ "modified": "2026-10-12 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Scan Me",
  "name": "Scan Me Settings",

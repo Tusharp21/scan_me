@@ -4,13 +4,45 @@
 import frappe
 from frappe.model.document import Document
 
+from scan_me.utils.verification import QR_MODES, get_doctype_features, get_print_doctypes
+
+
+def _normalize_row(row):
+	"""Keep a row's feature flags consistent; returns a list of human-readable fixes."""
+	fixes = []
+
+	if not row.signing_mode:
+		row.signing_mode = "None"
+
+	# PDF signing happens on the Advanced Print page, so it needs Advanced Print.
+	if not row.allow_advanced_print:
+		if row.signing_mode == "Verified QR + PDF signature":
+			row.signing_mode = "Verified QR"
+			fixes.append(
+				frappe._("{0}: PDF signature needs Advanced Print, switched to Verified QR.").format(
+					row.ref_doctype
+				)
+			)
+		elif row.signing_mode == "PDF signature only":
+			row.signing_mode = "None"
+			fixes.append(
+				frappe._("{0}: PDF signature needs Advanced Print, switched to None.").format(row.ref_doctype)
+			)
+
+	# A signature image only makes sense with a Verified QR.
+	if row.signing_mode not in QR_MODES:
+		row.signature_required = 0
+	return fixes
+
 
 class ScanMeSettings(Document):
 	def validate(self):
+		fixes = []
 		# Per-row checks here: Frappe doesn't call child validate() on parent save.
 		for row in self.get("ref_doctype_info") or []:
 			if not row.ref_doctype:
 				continue
+			fixes.extend(_normalize_row(row))
 			meta = frappe.get_meta(row.ref_doctype)
 			if getattr(meta, "issingle", 0):
 				frappe.throw(
@@ -24,16 +56,25 @@ class ScanMeSettings(Document):
 						"'{0}' is a child table and can't be signed on its own — pick the parent doctype instead."
 					).format(row.ref_doctype)
 				)
+		if fixes:
+			frappe.msgprint(
+				"<br>".join(fixes),
+				title=frappe._("Settings adjusted"),
+				indicator="orange",
+				alert=True,
+			)
 
 
 def _user_allowed_doctypes():
-	"""Allowlist filtered by caller's write perm — prevents low-role enumeration of privileged targets."""
-	settings = frappe.get_single("Scan Me Settings")
-	return [
-		d.ref_doctype
-		for d in (settings.get("ref_doctype_info") or [])
-		if d.enable and frappe.has_permission(d.ref_doctype, "write")
-	]
+	"""Signable doctypes filtered by caller's write perm — prevents low-role enumeration of privileged targets."""
+	from scan_me.utils.verification import get_allowed_doctypes
+
+	return [dt for dt in sorted(get_allowed_doctypes()) if frappe.has_permission(dt, "write")]
+
+
+def _user_print_doctypes():
+	"""Advanced Print doctypes filtered by caller's print perm."""
+	return [dt for dt in sorted(get_print_doctypes()) if frappe.has_permission(dt, "print")]
 
 
 @frappe.whitelist(allow_guest=False)
@@ -49,7 +90,8 @@ def get_form_integration():
 	# Default on for older installs missing the field.
 	show = settings.get("enable_advanced_print_button") in (None, 1, "1", True)
 	return {
-		"allowed_doctypes": _user_allowed_doctypes(),
+		# The Advanced Print icon: doctypes with Advanced Print on that the user may print.
+		"allowed_doctypes": _user_print_doctypes(),
 		"show_advanced_print_button": 1 if show else 0,
 	}
 
@@ -80,17 +122,54 @@ def get_print_defaults(doctype):
 
 
 @frappe.whitelist(allow_guest=False)
-def get_dialog_settings():
-	"""UI toggle flags for the print dialog. Pure UI flags — no per-caller filtering needed."""
+def get_dialog_settings(doctype=None, docname=None):
+	"""UI flags for the print dialog. With `doctype`, the flags are narrowed to what
+	that document type gets (Document Marks, Signing Mode); with `docname` it also
+	reports whether that document has a Verified QR."""
 	s = frappe.get_single("Scan Me Settings")
-	# Default on for any flag missing from older installs.
-	return {
-		"show_copies": 1 if s.get("show_copies_section") in (None, 1, "1", True) else 0,
-		"show_header_footer": 1 if s.get("show_header_footer_section") in (None, 1, "1", True) else 0,
-		"show_qr": 1 if s.get("show_qr_section") in (None, 1, "1", True) else 0,
-		"show_signature": 1 if s.get("show_signature_section") in (None, 1, "1", True) else 0,
-		"show_live_preview": 1 if s.get("show_live_preview") in (None, 1, "1", True) else 0,
-		"signature_type": s.get("signature_type") or "Visual Block",
-		"enable_pades_signing": 1 if s.get("enable_pades_signing") in (1, "1", True) else 0,
+
+	def on(field, default_on=True):
+		allowed = (None, 1, "1", True) if default_on else (1, "1", True)
+		return 1 if s.get(field) in allowed else 0
+
+	settings = {
+		"show_copies": on("show_copies_section"),
+		"show_header_footer": on("show_header_footer_section"),
+		"show_qr": on("show_qr_section"),
+		"show_signature": on("show_signature_section"),
+		"show_live_preview": on("show_live_preview"),
+		"signature_type": "Visual Block",
+		"enable_pades_signing": on("enable_pades_signing", default_on=False),
 		"watermark_mode": s.get("watermark_mode") or "Disabled",
 	}
+	if not doctype:
+		return settings
+
+	if not frappe.has_permission(doctype, "print"):
+		frappe.throw(
+			frappe._("No permission to print '{0}'.").format(doctype),
+			frappe.PermissionError,
+		)
+	feats = get_doctype_features(doctype)
+	marks = feats["document_marks"]
+	# Document Marks group: QR, watermark, copies, signature card.
+	settings["show_copies"] = 1 if (settings["show_copies"] and marks) else 0
+	settings["show_qr"] = 1 if (settings["show_qr"] and marks) else 0
+	if not marks:
+		settings["watermark_mode"] = "Disabled"
+
+	# What "Apply Signature" does. A document type signed with the certificate gets
+	# the invisible PDF signature only; the on-page signature card is for the plain
+	# "Verified QR" mode (and needs Document Marks).
+	visual = bool(feats["signing_mode"] == "Verified QR" and marks)
+	pades = bool(feats["pdf_signature"] and settings["enable_pades_signing"])
+	settings["signature_type"] = "Cryptographic (PAdES)" if pades else "Visual Block"
+	if not (visual or pades):
+		settings["show_signature"] = 0
+	settings["signing_mode"] = feats["signing_mode"]
+	settings["document_signed"] = bool(
+		docname
+		and frappe.has_permission(doctype, "print", docname)
+		and frappe.db.exists("Verified QR", {"ref_doctype": doctype, "ref_docname": docname})
+	)
+	return settings

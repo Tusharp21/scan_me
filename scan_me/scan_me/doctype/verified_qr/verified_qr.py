@@ -29,14 +29,17 @@ class VerifiedQR(Document):
 @frappe.whitelist(allow_guest=False)
 def check_button_required(doctype, docname):
 	"""Show 'Generate Verified QR' button? Honours allowlist, write perm, and signer rules."""
-	settings = frappe.get_single("Scan Me Settings")
-	allowed_doctypes = [d.ref_doctype for d in settings.get("ref_doctype_info") if d.enable]
+	from scan_me.utils.verification import get_allowed_doctypes
 
-	if doctype not in allowed_doctypes:
+	if doctype not in get_allowed_doctypes():
 		return False
 
 	# Write-perm gate stops low-role users from enumerating signed docs.
 	if not frappe.has_permission(doctype, "write", docname):
+		return False
+
+	# Cancelled documents cannot be signed.
+	if frappe.db.get_value(doctype, docname, "docstatus") == 2:
 		return False
 
 	signing = get_signing_settings()
@@ -55,9 +58,9 @@ def check_signature_required(doctype):
 	"""True if this doctype requires a signature image; gated by write perm to block enumeration."""
 	if not frappe.has_permission(doctype, "write"):
 		frappe.throw(frappe._("Not permitted."), frappe.PermissionError)
-	settings = frappe.get_single("Scan Me Settings")
-	allowed_doctypes = [d.ref_doctype for d in settings.get("ref_doctype_info") if d.signature_required]
-	return doctype in allowed_doctypes
+	from scan_me.utils.verification import doctype_requires_signature
+
+	return doctype_requires_signature(doctype)
 
 
 @frappe.whitelist(allow_guest=False)

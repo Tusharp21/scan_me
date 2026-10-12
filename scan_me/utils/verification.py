@@ -160,18 +160,112 @@ def get_signing_settings():
 	}
 
 
-def get_allowed_doctypes():
-	"""Set of enabled doctypes from Scan Me Settings → ref_doctype_info."""
+# Signing Mode values; kept next to the helpers that read them.
+QR_MODES = {"Verified QR", "Verified QR + PDF signature"}
+PDF_MODES = {"Verified QR + PDF signature", "PDF signature only"}
+
+_NO_FEATURES = {
+	"signing_mode": "None",
+	"signing": False,
+	"pdf_signature": False,
+	"advanced_print": False,
+	"document_marks": False,
+}
+
+
+def _row_features(row):
+	"""Feature flags of one allowlist row, derived from its Signing Mode,
+	Advanced Print and Document Marks."""
+	mode = row.get("signing_mode") or "None"
+	advanced = bool(row.get("allow_advanced_print"))
+	return {
+		"signing_mode": mode,
+		"signing": mode in QR_MODES,
+		# PDF signing happens on the Advanced Print page.
+		"pdf_signature": mode in PDF_MODES and advanced,
+		"advanced_print": advanced,
+		"document_marks": advanced and bool(row.get("allow_document_marks")),
+	}
+
+
+def get_doctype_features(doctype):
+	"""Merged feature flags for a doctype (a doctype listed twice gets the union)."""
+	merged = dict(_NO_FEATURES)
 	settings = frappe.get_single("Scan Me Settings")
-	return {d.ref_doctype for d in (settings.get("ref_doctype_info") or []) if d.enable}
+	for row in settings.get("ref_doctype_info") or []:
+		if row.ref_doctype != doctype:
+			continue
+		feats = _row_features(row)
+		for key in ("signing", "pdf_signature", "advanced_print", "document_marks"):
+			merged[key] = merged[key] or feats[key]
+		if merged["signing_mode"] == "None":
+			merged["signing_mode"] = feats["signing_mode"]
+	return merged
+
+
+def get_allowed_doctypes():
+	"""Set of doctypes that can be signed with a Verified QR."""
+	settings = frappe.get_single("Scan Me Settings")
+	return {
+		d.ref_doctype
+		for d in (settings.get("ref_doctype_info") or [])
+		if d.ref_doctype and _row_features(d)["signing"]
+	}
+
+
+def doctype_requires_signature(doctype):
+	"""True when a row for this doctype signs with a Verified QR and requires the
+	signer's signature image."""
+	settings = frappe.get_single("Scan Me Settings")
+	for row in settings.get("ref_doctype_info") or []:
+		if row.ref_doctype == doctype and row.get("signature_required") and _row_features(row)["signing"]:
+			return True
+	return False
+
+
+def get_print_toggles():
+	"""Global print switches from Scan Me Settings (an unset value counts as on)."""
+	s = frappe.get_single("Scan Me Settings")
+
+	def on(field):
+		return s.get(field) in (None, 1, "1", True)
+
+	return {
+		"show_copies": on("show_copies_section"),
+		"show_header_footer": on("show_header_footer_section"),
+		"show_qr": on("show_qr_section"),
+		"show_signature": on("show_signature_section"),
+		"watermark_mode": s.get("watermark_mode") or "Disabled",
+	}
+
+
+def get_print_doctypes():
+	"""Set of doctypes that get the Advanced Print page."""
+	settings = frappe.get_single("Scan Me Settings")
+	return {
+		d.ref_doctype
+		for d in (settings.get("ref_doctype_info") or [])
+		if d.ref_doctype and _row_features(d)["advanced_print"]
+	}
 
 
 def assert_allowed_doctype(doctype):
-	"""Single source of truth gate — raise PermissionError if doctype not allowlisted."""
+	"""Single source of truth gate for signing — raise PermissionError if not allowed."""
 	if doctype not in get_allowed_doctypes():
 		frappe.throw(
 			frappe._(
-				"'{0}' is not enabled for Scan Me. Configure it under 'Allowed Documents' in Scan Me Settings."
+				"'{0}' is not enabled for signing. Set a Signing Mode for it in the Documents tab of Scan Me Settings."
+			).format(doctype),
+			frappe.PermissionError,
+		)
+
+
+def assert_print_allowed(doctype):
+	"""Gate for Advanced Print — raise PermissionError if the doctype doesn't get it."""
+	if doctype not in get_print_doctypes():
+		frappe.throw(
+			frappe._(
+				"Advanced Print is not enabled for '{0}'. Tick Advanced Print for it in the Documents tab of Scan Me Settings."
 			).format(doctype),
 			frappe.PermissionError,
 		)

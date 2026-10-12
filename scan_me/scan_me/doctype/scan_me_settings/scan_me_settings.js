@@ -25,7 +25,7 @@ frappe.ui.form.on("Scan Me Settings", {
 		apply_config_warnings(frm);
 	},
 
-	signature_type(frm) {
+	ref_doctype_info_on_form_rendered(frm) {
 		apply_config_warnings(frm);
 	},
 
@@ -52,13 +52,14 @@ function apply_config_warnings(frm) {
 		);
 	}
 
-	const sig_type = frm.doc.signature_type || "";
-	const wants_pades = sig_type === "Cryptographic (PAdES)" || sig_type === "Both";
-	if (wants_pades && !frm.doc.enable_pades_signing) {
+	const pdf_modes = ["Verified QR + PDF signature", "PDF signature only"];
+	const rows_with_pdf = (frm.doc.ref_doctype_info || []).filter((r) =>
+		pdf_modes.includes(r.signing_mode)
+	);
+	if (rows_with_pdf.length && !frm.doc.enable_pades_signing) {
 		warnings.push(
 			__(
-				"Signature Type is set to '{0}' but 'Apply Real Digital Signature to PDFs (PAdES)' is off — only the visual stamp will be applied. Enable PAdES above to get Adobe's signature panel.",
-				[sig_type]
+				"Some document types use a PDF signature but 'Apply Real Digital Signature to PDFs (PAdES)' is off — their PDFs will not be signed."
 			)
 		);
 	}
